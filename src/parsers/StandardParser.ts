@@ -59,21 +59,25 @@ const TRAILING_SUFFIX = /(checkmate|check|mate|ch|ep|\+\+|\+|!!|\?\?|!\?|\?!|!|\
 
 const SQUARE = new RegExp(`^(?:(${SIDE_LETTERS}))?(${FILE_LETTERS})(?:(\\d)|sq)?$`);
 
-const CASTLING = /^(O-O-O|O-O|Castles)(K|Q|\(King\)|\(Queen\))?$/;
+// Exported so other tools can build their own RegExp from the exact same
+// definition (e.g. unanchored, or embedded in a larger pattern) instead of
+// re-deriving it and risking drift as this grammar evolves. Anchored below
+// for this module's own use; callers add whatever delimiters they need.
+export const CASTLING_PATTERN = '(O-O-O|O-O|Castles)(K|Q|\\(King\\)|\\(Queen\\))?';
 
 // See GRAMMAR.md for what each group means; named groups mirror the EBNF
 // production names directly.
-const PIECE_MOVE = new RegExp(
-  '^' +
-    `(?:(?<fusedSide>${SIDE_LETTERS})(?<fusedFile>${WING_FILE_LETTERS})?)?` + // FusedOrigin
-    '(?<piece>Kt|K|Q|R|B|N|P)' + // Piece
-    `(?:\\((?<originSquare>${SQUARE_SHAPE})\\))?` + // "(" Square ")"
-    '(?<moveOp>-|x|×)' + // MoveOp
-    `(?<target>${SQUARE_SHAPE}|P)` + // Target: a Square, or bare "P" ("P" isn't a file)
-    `(?:/(?<slashTail>${SQUARE_SHAPE}|${PROMOTION_PIECE_LETTERS}))?` + // "/" SlashTail
-    `(?:\\((?<promoParen>${PROMOTION_PIECE_LETTERS})\\)|=(?<promoEq>${PROMOTION_PIECE_LETTERS}))?` + // Promotion
-    '$',
-);
+export const PIECE_MOVE_PATTERN =
+  `(?:(?<fusedSide>${SIDE_LETTERS})(?<fusedFile>${WING_FILE_LETTERS})?)?` + // FusedOrigin
+  '(?<piece>Kt|K|Q|R|B|N|P)' + // Piece
+  `(?:\\((?<originSquare>${SQUARE_SHAPE})\\))?` + // "(" Square ")"
+  '(?<moveOp>-|x|×)' + // MoveOp
+  `(?<target>${SQUARE_SHAPE}|P)` + // Target: a Square, or bare "P" ("P" isn't a file)
+  `(?:/(?<slashTail>${SQUARE_SHAPE}|${PROMOTION_PIECE_LETTERS}))?` + // "/" SlashTail
+  `(?:\\((?<promoParen>${PROMOTION_PIECE_LETTERS})\\)|=(?<promoEq>${PROMOTION_PIECE_LETTERS}))?`; // Promotion
+
+const CASTLING = new RegExp(`^${CASTLING_PATTERN}$`);
+const PIECE_MOVE = new RegExp(`^${PIECE_MOVE_PATTERN}$`);
 
 // Periods and whitespace are both insignificant throughout this dialect —
 // stripped up front rather than tolerated piecemeal in each production.

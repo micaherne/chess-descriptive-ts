@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { StandardParser } from '../../src/parsers/StandardParser.js';
+import { StandardParser, PIECE_MOVE_PATTERN, CASTLING_PATTERN } from '../../src/parsers/StandardParser.js';
 import type { Suffixes } from '../../src/parsers/MoveNode.js';
 
 const NO_SUFFIXES: Suffixes = { check: null, enPassant: false, annotation: null };
@@ -381,6 +381,14 @@ describe('StandardParser#parse', () => {
   describe('invalid notation', () => {
     it.each([[''], ['not a move'], ['N-Z9']])('throws on %s', (notation) => {
       expect(() => new StandardParser().parse(notation)).toThrow();
+    });
+  });
+
+  describe('exported patterns', () => {
+    it('can be composed into a fresh, differently-anchored regex for reuse elsewhere', () => {
+      const finder = new RegExp(`(?:${CASTLING_PATTERN})|(?:${PIECE_MOVE_PATTERN})`, 'g');
+      const text = 'random words N-QB3 more words O-O end';
+      expect([...text.matchAll(finder)].map((m) => m[0])).toEqual(['N-QB3', 'O-O']);
     });
   });
 });
