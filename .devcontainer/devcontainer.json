@@ -1,0 +1,16 @@
+// For format details, see https://aka.ms/devcontainer.json
+{
+  "name": "TypeScript",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:4.0.7-24-bookworm",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "anthropic.claude-code"
+      ]
+    }
+  },
+
+  "postCreateCommand": "npm install"
+}
