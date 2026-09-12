@@ -29,6 +29,23 @@ const CHECK_MARKS: Record<string, Suffixes['check']> = {
 
 const ANNOTATIONS = new Set(['!', '?', '!!', '??', '!?', '?!']);
 
+// A run of dots and/or whitespace, always optional - the "filler" permitted
+// between any two adjacent tokens in this dialect. Historical notation
+// sprinkles periods after abbreviations and spaces around symbols fairly
+// arbitrarily (e.g. "K.Kt.-B.5"), and neither ever changes the meaning. This
+// deliberately does NOT split a multi-letter token in two - "Kt", "sq",
+// "checkmate" etc. stay intact - except "ep" below, which represents "e.p.":
+// two separately-abbreviated letters, not one word, so it gets filler
+// between the "e" and the "p" too.
+const FILLER = '[.\\s]*';
+
+// A single optional trailing dot - narrower than FILLER (no whitespace) -
+// for the "an abbreviated word/letter can take its own trailing dot" case
+// (e.g. the "Kt." in "BxKt.", or "Castles."), used at points where a bare
+// FILLER would risk swallowing adjacent whitespace that isn't part of the
+// notation at all (see SQUARE_SHAPE below).
+const DOT = '\\.?';
+
 // Shared letter sets, so the precise shape of a square/file/promotion piece
 // is defined exactly once and reused everywhere it's needed, rather than
 // risking two copies drifting apart.
@@ -36,54 +53,87 @@ const SIDE_LETTERS = '[KQ]';
 const WING_FILE_LETTERS = 'Kt|R|N|B';
 const FILE_LETTERS = `Kt|[RNBQK]`;
 const PROMOTION_PIECE_LETTERS = 'Kt|[QRBN]';
+// Case-insensitive spelled out per-letter rather than an `i` flag, since an
+// `i` flag would also case-fold the piece/file letters elsewhere in the same
+// pattern, which should stay case-sensitive.
+const SQ = '[sS][qQ]';
+
+// "-" (ASCII hyphen) plus en dash/em dash, all meaning "to"; "x"/"X"/"×" all
+// meaning "takes". CAPTURE_OPS is also used at the one place that has to
+// tell the two apart (deciding `capture` in `parse()` below).
+const NON_CAPTURE_OPS = '-|–|—';
+const CAPTURE_OPS = 'x|X|×';
+const CAPTURE_OP_SET = new Set(['x', 'X', '×']);
 
 // The full shape of a Square (side, file, rank-or-"sq", all optional except
 // the file), unanchored and with no capturing groups of its own — used to
 // bound `target`/`originSquare`/`slashTail` in PIECE_MOVE below so they can
-// only ever match an actual square, not an unbounded run of characters.
-const SQUARE_SHAPE = `(?:${SIDE_LETTERS})?(?:${FILE_LETTERS})(?:\\d|sq)?`;
+// only ever match an actual square (plus filler), not an unbounded run of
+// characters. Filler only ever matches dots/whitespace, so this stays just
+// as bounded as before even with filler woven through it. The trailing DOT
+// (not full FILLER) covers a dot right after the file/"sq" itself - "Kt."
+// as a bare captured-piece target, or "sq." - without risking an unbounded
+// FILLER swallowing adjacent whitespace that isn't part of the square at all
+// when this pattern is reused for scanning surrounding text.
+const SQUARE_SHAPE = `(?:(?:${SIDE_LETTERS})${FILLER})?(?:${FILE_LETTERS})(?:${FILLER}(?:\\d|${SQ}))?${DOT}`;
 
-const PROMOTION_PIECE = new RegExp(`^(?:${PROMOTION_PIECE_LETTERS})$`);
+// Trailing DOT (not the exact-match check this used to be) because a
+// promotion piece reached via `slashTail` may come through SQUARE_SHAPE
+// (which itself tolerates a trailing dot, e.g. "P-K8/Kt.") rather than as a
+// bare letter - the dot needs stripping here, not just tolerating.
+const PROMOTION_PIECE = new RegExp(`^(${PROMOTION_PIECE_LETTERS})${DOT}$`);
 type PromotionPiece = 'Q' | 'R' | 'B' | 'N';
 
 function parsePromotionPiece(raw: string): PromotionPiece {
-  if (!PROMOTION_PIECE.test(raw)) {
+  const match = PROMOTION_PIECE.exec(raw);
+  if (!match) {
     throw new SyntaxError(`Invalid promotion piece: "${raw}"`);
   }
-  return knightAlias(raw) as PromotionPiece;
+  return knightAlias(match[1]) as PromotionPiece;
 }
 
 // Anchored to the end of the string; tried leftmost-first, so e.g. "++" is
 // preferred over "+" and "checkmate" over "check" whenever both would fit.
-const TRAILING_SUFFIX = /(checkmate|check|mate|ch|ep|\+\+|\+|!!|\?\?|!\?|\?!|!|\?)$/;
+// "ep" (standing for "e.p.") is the one token split into two letters with
+// filler between them - see the FILLER comment above.
+const TRAILING_SUFFIX = new RegExp(
+  `${FILLER}(checkmate|check|mate|ch|e${FILLER}p|\\+\\+|\\+|!!|\\?\\?|!\\?|\\?!|!|\\?)${FILLER}$`,
+);
 
-const SQUARE = new RegExp(`^(?:(${SIDE_LETTERS}))?(${FILE_LETTERS})(?:(\\d)|sq)?$`);
+const SQUARE = new RegExp(
+  `^(?:(${SIDE_LETTERS})${FILLER})?(${FILE_LETTERS})(?:${FILLER}(?:(\\d)|${SQ}))?${DOT}$`,
+);
 
 // Exported so other tools can build their own RegExp from the exact same
 // definition (e.g. unanchored, or embedded in a larger pattern) instead of
 // re-deriving it and risking drift as this grammar evolves. Anchored below
 // for this module's own use; callers add whatever delimiters they need.
-export const CASTLING_PATTERN = '(O-O-O|O-O|Castles)(K|Q|\\(King\\)|\\(Queen\\))?';
+// No leading/trailing filler here: that's padding *around* the move, not
+// *within* it, and would mean a match against surrounding text swallows
+// adjacent whitespace it doesn't own.
+// Distinct groups per semantic value (never one group spanning filler/parens
+// itself) so parseCastlingSide can check presence/exact-equality safely,
+// the same reasoning as the "captured piece"/"promotion piece" fixes above:
+// a group that captures a word *plus* the filler around it can no longer be
+// compared to the bare word.
+export const CASTLING_PATTERN =
+  `(?:(O${FILLER}-${FILLER}O)(${FILLER}-${FILLER}O)?|(Castles))${DOT}` +
+  `(?:${FILLER}(?:(K|Q)|\\(${FILLER}(King|Queen)${FILLER}\\))${DOT})?`;
 
 // See GRAMMAR.md for what each group means; named groups mirror the EBNF
 // production names directly.
 export const PIECE_MOVE_PATTERN =
-  `(?:(?<fusedSide>${SIDE_LETTERS})(?<fusedFile>${WING_FILE_LETTERS})?)?` + // FusedOrigin
+  `(?:(?<fusedSide>${SIDE_LETTERS})(?:${FILLER}(?<fusedFile>${WING_FILE_LETTERS}))?${FILLER})?` + // FusedOrigin
   '(?<piece>Kt|K|Q|R|B|N|P)' + // Piece
-  `(?:\\((?<originSquare>${SQUARE_SHAPE})\\))?` + // "(" Square ")"
-  '(?<moveOp>-|x|×)' + // MoveOp
+  `(?:${FILLER}\\(${FILLER}(?<originSquare>${SQUARE_SHAPE})\\))?` + // "(" Square ")"
+  `${FILLER}(?<moveOp>${NON_CAPTURE_OPS}|${CAPTURE_OPS})${FILLER}` + // MoveOp
   `(?<target>${SQUARE_SHAPE}|P)` + // Target: a Square, or bare "P" ("P" isn't a file)
-  `(?:/(?<slashTail>${SQUARE_SHAPE}|${PROMOTION_PIECE_LETTERS}))?` + // "/" SlashTail
-  `(?:\\((?<promoParen>${PROMOTION_PIECE_LETTERS})\\)|=(?<promoEq>${PROMOTION_PIECE_LETTERS}))?`; // Promotion
+  `(?:${FILLER}/${FILLER}(?<slashTail>${SQUARE_SHAPE}|${PROMOTION_PIECE_LETTERS}))?` + // "/" SlashTail
+  `(?:${FILLER}\\(${FILLER}(?<promoParen>${PROMOTION_PIECE_LETTERS})${FILLER}\\)|` +
+  `${FILLER}=${FILLER}(?<promoEq>${PROMOTION_PIECE_LETTERS})${DOT})?`; // Promotion
 
 const CASTLING = new RegExp(`^${CASTLING_PATTERN}$`);
 const PIECE_MOVE = new RegExp(`^${PIECE_MOVE_PATTERN}$`);
-
-// Periods and whitespace are both insignificant throughout this dialect —
-// stripped up front rather than tolerated piecemeal in each production.
-function normalize(notation: string): string {
-  return notation.replace(/[.\s]/g, '');
-}
 
 function extractSuffixes(input: string): { core: string; suffixes: Suffixes } {
   const suffixes: Suffixes = { check: null, enPassant: false, annotation: null };
@@ -92,7 +142,7 @@ function extractSuffixes(input: string): { core: string; suffixes: Suffixes } {
   while ((match = TRAILING_SUFFIX.exec(core))) {
     const token = match[1];
     core = core.slice(0, match.index);
-    if (token === 'ep') {
+    if (token.startsWith('e')) {
       suffixes.enPassant = true;
     } else if (token in CHECK_MARKS) {
       suffixes.check = CHECK_MARKS[token];
@@ -141,9 +191,12 @@ function parseOrigin(
   return { kind: 'none' };
 }
 
+const CAPTURED_PIECE = new RegExp(`^(Kt|[KQRBNP])${DOT}$`);
+
 function parseTarget(raw: string, capture: boolean): Target {
-  if (capture && /^(?:Kt|[KQRBNP])$/.test(raw)) {
-    return { kind: 'captured-piece', piece: knightAlias(raw) as PieceLetter };
+  const capturedPiece = capture ? CAPTURED_PIECE.exec(raw) : null;
+  if (capturedPiece) {
+    return { kind: 'captured-piece', piece: knightAlias(capturedPiece[1]) as PieceLetter };
   }
   return { kind: 'square', square: parseSquare(raw) };
 }
@@ -160,22 +213,27 @@ function parsePromotion(
   return null;
 }
 
-function parseCastlingSide(symbol: string, qualifier?: string): Side | null {
-  if (symbol === 'O-O') return 'K';
-  if (symbol === 'O-O-O') return 'Q';
-  if (qualifier === 'K' || qualifier === '(King)') return 'K';
-  if (qualifier === 'Q' || qualifier === '(Queen)') return 'Q';
+function parseCastlingSide(
+  ooBase: string | undefined,
+  ooExtra: string | undefined,
+  bareQualifier: string | undefined,
+  wordQualifier: string | undefined,
+): Side | null {
+  if (ooBase) return ooExtra ? 'Q' : 'K';
+  if (bareQualifier === 'K' || wordQualifier === 'King') return 'K';
+  if (bareQualifier === 'Q' || wordQualifier === 'Queen') return 'Q';
   return null;
 }
 
 export class StandardParser extends Parser {
   parse(notation: string): MoveNode {
-    const { core, suffixes } = extractSuffixes(normalize(notation));
+    const { core, suffixes } = extractSuffixes(notation);
 
     const castling = CASTLING.exec(core);
     if (castling) {
-      const [, symbol, qualifier] = castling;
-      return { type: 'castling', side: parseCastlingSide(symbol, qualifier), suffixes };
+      const [, ooBase, ooExtra, , bareQualifier, wordQualifier] = castling;
+      const side = parseCastlingSide(ooBase, ooExtra, bareQualifier, wordQualifier);
+      return { type: 'castling', side, suffixes };
     }
 
     const move = PIECE_MOVE.exec(core);
@@ -187,7 +245,7 @@ export class StandardParser extends Parser {
       move.groups;
 
     const piece = normalizePiece(rawPiece);
-    const capture = moveOp !== '-';
+    const capture = CAPTURE_OP_SET.has(moveOp);
 
     return {
       type: 'piece-move',

@@ -322,7 +322,7 @@ describe('StandardParser#parse', () => {
     });
   });
 
-  describe('periods are insignificant everywhere', () => {
+  describe('periods and whitespace are insignificant between any tokens', () => {
     it('ignores a trailing period on the "Kt" abbreviation', () => {
       expect(new StandardParser().parse('Kt.-KB3')).toMatchObject({ piece: 'N' });
     });
@@ -333,14 +333,68 @@ describe('StandardParser#parse', () => {
       });
     });
 
-    it('treats "ep" and "e.p." identically', () => {
-      expect(new StandardParser().parse('PxP ep')).toEqual(new StandardParser().parse('PxP e.p.'));
+    it('treats "ep", "e.p.", and "e. p." identically', () => {
+      const ep = new StandardParser().parse('PxP e.p.');
+      expect(new StandardParser().parse('PxP ep')).toEqual(ep);
+      expect(new StandardParser().parse('PxP e. p.')).toEqual(ep);
+    });
+
+    it('treats spaces around the capture operator like no spaces at all', () => {
+      expect(new StandardParser().parse('Kt x Kt')).toEqual(new StandardParser().parse('KtxKt'));
+    });
+
+    it('handles periods and spaces scattered through fused-origin abbreviations, as in old texts', () => {
+      // e.g. "K.Kt.-B.5" for "the King's Knight to B5"
+      expect(new StandardParser().parse('K.Kt.-B.5')).toEqual(new StandardParser().parse('KKt-B5'));
+      expect(new StandardParser().parse('K Kt - B 5')).toEqual(new StandardParser().parse('KKt-B5'));
+    });
+
+    it('allows a trailing period on a bare captured-piece target with no rank', () => {
+      expect(new StandardParser().parse('BxKt.')).toEqual(new StandardParser().parse('BxKt'));
+    });
+
+    it('allows a trailing period after "sq" with no other separator', () => {
+      expect(new StandardParser().parse('R-Ksq.')).toEqual(new StandardParser().parse('R-Ksq'));
+    });
+
+    it('allows periods/spaces inside castling, including "O-O-O" and "(King)"/"(Queen)"', () => {
+      expect(new StandardParser().parse('O - O')).toEqual(new StandardParser().parse('O-O'));
+      expect(new StandardParser().parse('O - O - O')).toEqual(new StandardParser().parse('O-O-O'));
+      expect(new StandardParser().parse('Castles.')).toEqual(new StandardParser().parse('Castles'));
+      expect(new StandardParser().parse('Castles ( King )')).toEqual(
+        new StandardParser().parse('Castles(King)'),
+      );
+    });
+
+    it('allows a trailing period on a promoted-to piece, in every promotion form', () => {
+      const promoteToKnight = new StandardParser().parse('P-K8(N)');
+      expect(new StandardParser().parse('P-K8(Kt.)')).toEqual(promoteToKnight);
+      expect(new StandardParser().parse('P-K8=Kt.')).toEqual(promoteToKnight);
+      expect(new StandardParser().parse('P-K8/Kt.')).toEqual(promoteToKnight);
+    });
+
+    it('does not treat filler around the outside of the whole move as part of it', () => {
+      // The exported patterns rely on this - see the "exported patterns" tests below.
+      expect(() => new StandardParser().parse(' N-QB3')).toThrow();
+      expect(() => new StandardParser().parse('N-QB3 ')).toThrow();
     });
   });
 
-  describe('whitespace is insignificant everywhere', () => {
-    it('treats spaces around the capture operator like no spaces at all', () => {
-      expect(new StandardParser().parse('Kt x Kt')).toEqual(new StandardParser().parse('KtxKt'));
+  describe('alternate spellings of individual tokens', () => {
+    it('accepts "sq" capitalized either way', () => {
+      const rKsq = new StandardParser().parse('R-Ksq');
+      expect(new StandardParser().parse('R-KSq')).toEqual(rKsq);
+      expect(new StandardParser().parse('R-KSQ')).toEqual(rKsq);
+    });
+
+    it('accepts uppercase "X" for a capture, same as lowercase "x"', () => {
+      expect(new StandardParser().parse('QXN')).toEqual(new StandardParser().parse('QxN'));
+    });
+
+    it('accepts an en dash or em dash for "to", same as a hyphen', () => {
+      const pk4 = new StandardParser().parse('P-K4');
+      expect(new StandardParser().parse('P–K4')).toEqual(pk4); // en dash
+      expect(new StandardParser().parse('P—K4')).toEqual(pk4); // em dash
     });
   });
 
@@ -389,6 +443,26 @@ describe('StandardParser#parse', () => {
       const finder = new RegExp(`(?:${CASTLING_PATTERN})|(?:${PIECE_MOVE_PATTERN})`, 'g');
       const text = 'random words N-QB3 more words O-O end';
       expect([...text.matchAll(finder)].map((m) => m[0])).toEqual(['N-QB3', 'O-O']);
+    });
+
+    it('does not swallow adjacent whitespace that is not part of the move', () => {
+      const finder = new RegExp(`(?:${CASTLING_PATTERN})|(?:${PIECE_MOVE_PATTERN})`, 'g');
+      const text = 'words N-QB3 more words';
+      expect([...text.matchAll(finder)].map((m) => m[0])).toEqual(['N-QB3']);
+    });
+
+    it('finds a real move with internal filler embedded in prose, with no move number to anchor on', () => {
+      const finder = new RegExp(`(?:${CASTLING_PATTERN})|(?:${PIECE_MOVE_PATTERN})`, 'g');
+      const text =
+        'If instead K-Kt sq.; (12) Q-R5, BxKt; (13) PxB, P-B3; (14) P-Kt6, and mate cannot be avoided.';
+      expect([...text.matchAll(finder)].map((m) => m[0])).toEqual([
+        'K-Kt sq.',
+        'Q-R5',
+        'BxKt',
+        'PxB',
+        'P-B3',
+        'P-Kt6',
+      ]);
     });
   });
 });

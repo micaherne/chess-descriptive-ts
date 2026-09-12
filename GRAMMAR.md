@@ -101,14 +101,30 @@ Notes:
 
 ## Tokenization
 
-Before matching the grammar below, every `.` and whitespace character is
-stripped from the raw input. Historical descriptive notation sprinkles
-periods after abbreviations fairly arbitrarily (`Kt.`, `ch.`, `e.p.`, `sq.`)
-and spaces inconsistently around tokens (`Kt x Kt`, `Castles K`), and neither
-ever changes the meaning, so both are removed uniformly up front rather than
-being tolerated piecemeal in each production (`Kt`/`Kt.`, `ch`/`ch.`,
-`sq`/`sq.`, `e.p.` becoming the token `ep` below, and `Kt x Kt` becoming
-`KtxKt`).
+A run of dots and/or whitespace ("filler") is allowed **between any two
+adjacent tokens** in the grammar below — not stripped as a preprocessing
+step, but built directly into the pattern at each token boundary. Historical
+descriptive notation sprinkles periods after abbreviations and spaces around
+symbols fairly arbitrarily (`K.Kt.-B.5`, `Kt x Kt`, `Castles K`, `O - O`),
+and neither ever changes the meaning.
+
+Filler does **not** split a multi-letter token in two — `Kt`, `sq`,
+`checkmate`, `Castles`, `King`, `Queen` all stay intact as single units, and
+a trailing dot can follow any of these abbreviated words/letters (`Kt.`,
+`sq.`, `Castles.`) without splitting them. The one deliberate exception is
+`ep` (standing for `e.p.`): that really is two separately-abbreviated
+letters, not one word, so filler is allowed between the `e` and the `p` too
+(`e.p.`, `e. p.`, `ep` are all equivalent).
+
+Filler is **not** allowed as padding around the outside of the whole move —
+a leading/trailing run of dots or whitespace immediately before or after the
+entire `Move` is not part of it. This matters for reuse: `PIECE_MOVE_PATTERN`
+and `CASTLING_PATTERN`, exported from `StandardParser.ts` for use elsewhere
+(e.g. scanning a larger document for move-shaped spans), only match the move
+itself — they don't swallow adjacent whitespace they don't own. A caller
+scanning free text can point either pattern directly at raw, undotted or
+dotted text; no separate normalization step is needed or possible (there is
+no `normalize()` function to reuse — the tolerance lives in the pattern).
 
 `Kt` — the historical knight abbreviation — is accepted everywhere `N` is:
 as `Piece`, as a `File` (`Q-Kt2`, `KKt4`, real squares are routinely named
@@ -129,18 +145,21 @@ PieceMove      = [ FusedOrigin ] , Piece , [ "(" Square ")" ] , MoveOp , Target 
 Piece          = "K" | "Q" | "R" | "B" | "N" | "Kt" | "P" ;
 
 (* Disambiguating the origin has two syntactic positions: fused before the
-   piece letter (side alone for an officer, or side+file for a pawn, since a
-   pawn's file isn't implied by "P" the way a knight/bishop/rook's wing is
-   implied by which piece letter follows), or an explicit square in
-   parentheses right after the piece letter. Both the parenthesized form and
-   the "/" form below produce the same Origin AST node (kind: 'square'). *)
-FusedOrigin    = Side , [ WingFile ] ;   (* "KN" (officer) or "QB" in "QBP" (pawn) *)
+   piece letter (side alone for a rook/knight/bishop, or side+file for a
+   pawn, since a pawn's file isn't implied by "P" the way a knight/bishop/
+   rook's wing is implied by which piece letter follows), or an explicit
+   square in parentheses right after the piece letter. Both the parenthesized
+   form and the "/" form below produce the same Origin AST node
+   (kind: 'square'). *)
+FusedOrigin    = Side , [ WingFile ] ;   (* "KN" (rook/knight/bishop) or "QB" in "QBP" (pawn) *)
 
 (* "/" SlashTail is ambiguous in isolation (see Notes above) — Promotion when
    the piece is "P", otherwise an explicit origin Square. *)
 SlashTail      = Square | Piece ;
 
-MoveOp         = "-" | "x" | "×" ;  (* "-" = non-capture; "x"/"×" = capture *)
+(* "-" = non-capture ("to"); "x"/"×" = capture ("takes"). En dash and em dash
+   are accepted alongside the ASCII hyphen, and "X" alongside lowercase "x". *)
+MoveOp         = "-" | "–" | "—" | "x" | "X" | "×" ;
 
 (* A bare single letter matching Piece is the captured-piece identity when
    capturing (see Notes above); otherwise Target is a Square. *)
@@ -150,7 +169,7 @@ Square         = [ Side ] , File , [ Rank | RankOmitted ] ;
 Side           = "K" | "Q" ;
 File           = "R" | "N" | "Kt" | "B" | "Q" | "K" ;   (* "Kt" is an alias for "N" *)
 Rank           = "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" ;
-RankOmitted    = "sq" ;                  (* e.g. "R-K", "R-Ksq" — both mean rank 1 *)
+RankOmitted    = "sq" ;                  (* case-insensitive ("Sq", "SQ", ...); e.g. "R-K", "R-Ksq" — both mean rank 1 *)
 
 (* The "/" Piece promotion form (e.g. "P-K8/Q") is realized through SlashTail
    above, not a third alternative here — by the time Promotion is reached,
