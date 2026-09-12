@@ -77,10 +77,10 @@ const CAPTURE_OP_SET = new Set(['x', 'X', '×']);
 // this pattern is reused for scanning surrounding text.
 const SQUARE_SHAPE = `(?:(?:${SIDE_LETTERS})${GAP})?(?:${FILE_LETTERS})(?:${GAP}(?:\\d|${SQ}))?${DOT}`;
 
-// Trailing DOT (not the exact-match check this used to be) because a
-// promotion piece reached via `slashTail` may come through SQUARE_SHAPE
-// (which itself tolerates a trailing dot, e.g. "P-K8/Kt.") rather than as a
-// bare letter - the dot needs stripping here, not just tolerating.
+// Trailing DOT because a promotion piece reached via `slashTail` may come
+// through SQUARE_SHAPE (which itself tolerates a trailing dot, e.g.
+// "P-K8/Kt.") rather than as a bare letter - the dot needs stripping here,
+// not just tolerating.
 const PROMOTION_PIECE = new RegExp(`^(${PROMOTION_PIECE_LETTERS})${DOT}$`);
 type PromotionPiece = 'Q' | 'R' | 'B' | 'N';
 
@@ -110,10 +110,9 @@ const SQUARE = new RegExp(`^(?:(${SIDE_LETTERS})${GAP})?(${FILE_LETTERS})(?:${GA
 // *within* it, and would mean a match against surrounding text swallows
 // adjacent whitespace it doesn't own.
 // Distinct groups per semantic value (never one group spanning filler/parens
-// itself) so parseCastlingSide can check presence/exact-equality safely,
-// the same reasoning as the "captured piece"/"promotion piece" fixes above:
-// a group that captures a word *plus* the filler around it can no longer be
-// compared to the bare word.
+// itself) so parseCastlingSide can check presence/exact-equality safely: a
+// group that captures a word plus the filler around it can't be compared
+// to the bare word.
 export const CASTLING_PATTERN =
   `(?:(O${GAP}-${GAP}O)(${GAP}-${GAP}O)?|(Castles))${DOT}` +
   `(?:${GAP}(?:(K|Q)|\\(${GAP}(King|Queen)${GAP}\\))${DOT})?`;
@@ -122,10 +121,14 @@ export const CASTLING_PATTERN =
 // production names directly.
 export const PIECE_MOVE_PATTERN =
   `(?:(?<fusedSide>${SIDE_LETTERS})(?:${GAP}(?<fusedFile>${WING_FILE_LETTERS}))?${GAP})?` + // FusedOrigin
-  '(?<piece>Kt|K|Q|R|B|N|P)' + // Piece
-  `(?:${GAP}\\(${GAP}(?<originSquare>${SQUARE_SHAPE})\\))?` + // "(" Square ")"
-  `${GAP}(?<moveOp>${NON_CAPTURE_OPS}|${CAPTURE_OPS})${GAP}` + // MoveOp
+  `(?<piece>Kt|K|Q|R|B|N|P)${GAP}` + // Piece
+  `(?:\\(${GAP}(?<originSquare>${SQUARE_SHAPE})\\)${GAP})?` + // "(" Square ")"
+  `(?<moveOp>${NON_CAPTURE_OPS}|${CAPTURE_OPS})${GAP}` + // MoveOp
   `(?<target>${SQUARE_SHAPE}|P)` + // Target: a Square, or bare "P" ("P" isn't a file)
+  // SlashTail and Promotion each keep their own leading GAP rather than a
+  // trailing one on target's line: both are optional and either can be the
+  // last thing in the pattern, so an unconditional trailing GAP here would
+  // match trailing whitespace that isn't part of the move at all.
   `(?:${GAP}/${GAP}(?<slashTail>${SQUARE_SHAPE}|${PROMOTION_PIECE_LETTERS}))?` + // "/" SlashTail
   `(?:${GAP}\\(${GAP}(?<promoParen>${PROMOTION_PIECE_LETTERS})${GAP}\\)|` +
   `${GAP}=${GAP}(?<promoEq>${PROMOTION_PIECE_LETTERS})${DOT})?`; // Promotion
