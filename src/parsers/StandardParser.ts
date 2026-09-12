@@ -29,7 +29,21 @@ const CHECK_MARKS: Record<string, Suffixes['check']> = {
 
 const ANNOTATIONS = new Set(['!', '?', '!!', '??', '!?', '?!']);
 
-const PROMOTION_PIECE = /^(?:Kt|([QRBN]))$/;
+// Shared letter sets, so the precise shape of a square/file/promotion piece
+// is defined exactly once and reused everywhere it's needed, rather than
+// risking two copies drifting apart.
+const SIDE_LETTERS = '[KQ]';
+const WING_FILE_LETTERS = 'Kt|R|N|B';
+const FILE_LETTERS = `Kt|[RNBQK]`;
+const PROMOTION_PIECE_LETTERS = 'Kt|[QRBN]';
+
+// The full shape of a Square (side, file, rank-or-"sq", all optional except
+// the file), unanchored and with no capturing groups of its own — used to
+// bound `target`/`originSquare`/`slashTail` in PIECE_MOVE below so they can
+// only ever match an actual square, not an unbounded run of characters.
+const SQUARE_SHAPE = `(?:${SIDE_LETTERS})?(?:${FILE_LETTERS})(?:\\d|sq)?`;
+
+const PROMOTION_PIECE = new RegExp(`^(?:${PROMOTION_PIECE_LETTERS})$`);
 type PromotionPiece = 'Q' | 'R' | 'B' | 'N';
 
 function parsePromotionPiece(raw: string): PromotionPiece {
@@ -43,7 +57,7 @@ function parsePromotionPiece(raw: string): PromotionPiece {
 // preferred over "+" and "checkmate" over "check" whenever both would fit.
 const TRAILING_SUFFIX = /(checkmate|check|mate|ch|ep|\+\+|\+|!!|\?\?|!\?|\?!|!|\?)$/;
 
-const SQUARE = /^(?:([KQ]))?(Kt|[RNBQK])(?:(\d)|sq)?$/;
+const SQUARE = new RegExp(`^(?:(${SIDE_LETTERS}))?(${FILE_LETTERS})(?:(\\d)|sq)?$`);
 
 const CASTLING = /^(O-O-O|O-O|Castles)(K|Q|\(King\)|\(Queen\))?$/;
 
@@ -51,13 +65,13 @@ const CASTLING = /^(O-O-O|O-O|Castles)(K|Q|\(King\)|\(Queen\))?$/;
 // production names directly.
 const PIECE_MOVE = new RegExp(
   '^' +
-    '(?:(?<fusedSide>K|Q)(?<fusedFile>Kt|R|N|B)?)?' + // FusedOrigin
+    `(?:(?<fusedSide>${SIDE_LETTERS})(?<fusedFile>${WING_FILE_LETTERS})?)?` + // FusedOrigin
     '(?<piece>Kt|K|Q|R|B|N|P)' + // Piece
-    '(?:\\((?<originSquare>[^()]+)\\))?' + // "(" Square ")"
+    `(?:\\((?<originSquare>${SQUARE_SHAPE})\\))?` + // "(" Square ")"
     '(?<moveOp>-|x|×)' + // MoveOp
-    '(?<target>[^/()=]+)' + // Target
-    '(?:/(?<slashTail>[^/()=]+))?' + // "/" SlashTail
-    '(?:\\((?<promoParen>Kt|[QRBN])\\)|=(?<promoEq>Kt|[QRBN]))?' + // Promotion
+    `(?<target>${SQUARE_SHAPE}|P)` + // Target: a Square, or bare "P" ("P" isn't a file)
+    `(?:/(?<slashTail>${SQUARE_SHAPE}|${PROMOTION_PIECE_LETTERS}))?` + // "/" SlashTail
+    `(?:\\((?<promoParen>${PROMOTION_PIECE_LETTERS})\\)|=(?<promoEq>${PROMOTION_PIECE_LETTERS}))?` + // Promotion
     '$',
 );
 
