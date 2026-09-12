@@ -44,21 +44,37 @@ function algebraicSquares(square: Square, color: Color): string[] {
   return algebraicFiles(square.file, square.side).map((file) => `${file}${rank}`);
 }
 
-function wingOfFile(file: string): Side {
-  return 'abcd'.includes(file) ? 'Q' : 'K';
-}
-
 function matchesOrigin(move: Move, origin: Origin, color: Color): boolean {
   switch (origin.kind) {
     case 'none':
       return true;
     case 'side':
-      return wingOfFile(move.from[0]) === origin.side;
+      // Deferred: "side" names the piece relative to its sibling(s) of the
+      // same type reaching this target, not a fixed half of the board — see
+      // narrowBySide(), applied once every other candidate is known.
+      return true;
     case 'file':
       return algebraicFiles(origin.file, origin.side).includes(move.from[0]);
     case 'square':
       return algebraicSquares(origin.square, color).includes(move.from);
   }
+}
+
+function fileOf(move: Move): string {
+  return move.from[0];
+}
+
+// "QKt"/"KN"-style side disambiguation is relative to the other candidate(s)
+// reaching the same target, not tied to a fixed half of the board: "Q" means
+// whichever candidate has the more queenside (earlier) file, "K" whichever
+// has the more kingside (later) file. A single candidate is trivially its
+// own extreme (the side letter becomes a no-op); a genuine tie leaves more
+// than one candidate, which the caller's ambiguity check then reports.
+function narrowBySide(candidates: Move[], side: Side): Move[] {
+  if (candidates.length === 0) return candidates;
+  const files = candidates.map(fileOf);
+  const extreme = side === 'Q' ? files.reduce((a, b) => (a < b ? a : b)) : files.reduce((a, b) => (a > b ? a : b));
+  return candidates.filter((move) => fileOf(move) === extreme);
 }
 
 function matchesTarget(move: Move, target: Target, color: Color): boolean {
@@ -104,9 +120,10 @@ export class DescriptiveNotationWrapper {
   resolve(notation: string): Move {
     const node = this.parser.parse(notation);
     const color = this.chess.turn();
-    const candidates = this.chess
-      .moves({ verbose: true })
-      .filter((move) => matchesMove(move, node, color));
+    let candidates = this.chess.moves({ verbose: true }).filter((move) => matchesMove(move, node, color));
+    if (node.type === 'piece-move' && node.origin.kind === 'side') {
+      candidates = narrowBySide(candidates, node.origin.side);
+    }
 
     if (candidates.length === 0) {
       throw new Error(`No legal move matches "${notation}"`);

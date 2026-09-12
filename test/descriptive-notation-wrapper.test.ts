@@ -105,6 +105,29 @@ describe('DescriptiveNotationWrapper#resolve', () => {
       expect(wrapper.resolve('Q(Q1)-Q5').san).toBe('Qdd5');
       expect(wrapper.resolve('Q(KR1)-Q5').san).toBe('Qhd5');
     });
+
+    it('treats "side" as relative to the other candidate(s), not a fixed half of the board', () => {
+      // Knights on e4 and f3 are both on the "kingside half" absolutely, but
+      // QKt should mean the more-queenside of the two (e4), KKt the other.
+      const fen = '4k3/8/8/8/4N3/5N2/8/7K w - - 0 1';
+      const wrapper = new DescriptiveNotationWrapper(new Chess(fen));
+      expect(wrapper.resolve('QKt-Q2').from).toBe('e4');
+      expect(wrapper.resolve('KKt-Q2').from).toBe('f3');
+    });
+
+    it('treats "side" as a no-op when only one candidate exists', () => {
+      const fen = '4k3/8/8/8/4N3/8/8/7K w - - 0 1';
+      const wrapper = new DescriptiveNotationWrapper(new Chess(fen));
+      expect(wrapper.resolve('QKt-Q2').from).toBe('e4');
+      expect(wrapper.resolve('KKt-Q2').from).toBe('e4');
+    });
+
+    it('with three candidates, "side" picks the extreme file, never the middle one', () => {
+      const fen = '7k/8/8/8/1N1N4/8/8/N6K w - - 0 1'; // knights on a1, b4, d4
+      const wrapper = new DescriptiveNotationWrapper(new Chess(fen));
+      expect(wrapper.resolve('QKt-QB2').from).toBe('a1');
+      expect(wrapper.resolve('KKt-QB2').from).toBe('d4');
+    });
   });
 
   describe('castling', () => {

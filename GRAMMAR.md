@@ -164,7 +164,23 @@ CheckMark      = "ch" | "+" | "mate" | "++" | "check" | "checkmate" ;
 
 Disambiguation (picking one legal move among several candidates matching an
 `Origin`/`Target` pair) is deliberately not part of this grammar — it's a
-semantic concern of the resolver, not a syntactic one.
+semantic concern of the resolver, not a syntactic one. One resolver rule is
+worth defining precisely here regardless, since it isn't obvious from the
+syntax and got it wrong once already:
+
+**`side` (in `Origin` and `FusedOrigin`, e.g. `QKt`, `KN`) is relative to the
+other candidate piece(s) of the same type reaching the same target — it is
+*not* a fixed half of the board.** `Q` means whichever candidate has the more
+queenside (earlier) file; `K` means whichever has the more kingside (later)
+file. So a knight sitting on the e-file can correctly be called `QKt` if the
+only other knight able to make the move is further along on the f-file, even
+though e is nominally "kingside" by a fixed a–d/e–h split. With three or more
+candidates, `Q`/`K` still only pick the single most-extreme one — a middle
+candidate can't be named this way at all and needs an explicit origin square
+instead. With exactly one candidate, the side letter is a no-op (there's
+nothing to disambiguate). A genuine tie (two candidates on the same file)
+leaves more than one candidate and is reported as ambiguous, same as any
+other unresolved case.
 
 ## Open Questions
 
