@@ -29,21 +29,21 @@ const CHECK_MARKS: Record<string, Suffixes['check']> = {
 
 const ANNOTATIONS = new Set(['!', '?', '!!', '??', '!?', '?!']);
 
-// A run of dots and/or whitespace, always optional - the "filler" permitted
-// between any two adjacent tokens in this dialect. Historical notation
-// sprinkles periods after abbreviations and spaces around symbols fairly
-// arbitrarily (e.g. "K.Kt.-B.5"), and neither ever changes the meaning. This
-// deliberately does NOT split a multi-letter token in two - "Kt", "sq",
-// "checkmate" etc. stay intact - except "ep" below, which represents "e.p.":
-// two separately-abbreviated letters, not one word, so it gets filler
-// between the "e" and the "p" too.
-const FILLER = '[.\\s]*';
+// A run of dots and/or whitespace, always optional - the "filler" (hence
+// GAP: the gap between two adjacent tokens where it's allowed to appear) in
+// this dialect. Historical notation sprinkles periods after abbreviations
+// and spaces around symbols fairly arbitrarily (e.g. "K.Kt.-B.5"), and
+// neither ever changes the meaning. This deliberately does NOT split a
+// multi-letter token in two - "Kt", "sq", "checkmate" etc. stay intact -
+// except "ep" below, which represents "e.p.": two separately-abbreviated
+// letters, not one word, so it gets a GAP between the "e" and the "p" too.
+const GAP = '[.\\s]*';
 
-// A single optional trailing dot - narrower than FILLER (no whitespace) -
-// for the "an abbreviated word/letter can take its own trailing dot" case
-// (e.g. the "Kt." in "BxKt.", or "Castles."), used at points where a bare
-// FILLER would risk swallowing adjacent whitespace that isn't part of the
-// notation at all (see SQUARE_SHAPE below).
+// A single optional trailing dot - narrower than GAP (no whitespace) - for
+// the "an abbreviated word/letter can take its own trailing dot" case (e.g.
+// the "Kt." in "BxKt.", or "Castles."), used at points where a bare GAP
+// would risk swallowing adjacent whitespace that isn't part of the notation
+// at all (see SQUARE_SHAPE below).
 const DOT = '\\.?';
 
 // Shared letter sets, so the precise shape of a square/file/promotion piece
@@ -69,13 +69,13 @@ const CAPTURE_OP_SET = new Set(['x', 'X', '×']);
 // the file), unanchored and with no capturing groups of its own — used to
 // bound `target`/`originSquare`/`slashTail` in PIECE_MOVE below so they can
 // only ever match an actual square (plus filler), not an unbounded run of
-// characters. Filler only ever matches dots/whitespace, so this stays just
-// as bounded as before even with filler woven through it. The trailing DOT
-// (not full FILLER) covers a dot right after the file/"sq" itself - "Kt."
-// as a bare captured-piece target, or "sq." - without risking an unbounded
-// FILLER swallowing adjacent whitespace that isn't part of the square at all
-// when this pattern is reused for scanning surrounding text.
-const SQUARE_SHAPE = `(?:(?:${SIDE_LETTERS})${FILLER})?(?:${FILE_LETTERS})(?:${FILLER}(?:\\d|${SQ}))?${DOT}`;
+// characters. GAP only ever matches dots/whitespace, so this stays just as
+// bounded as before even with filler woven through it. The trailing DOT
+// (not a full GAP) covers a dot right after the file/"sq" itself - "Kt." as
+// a bare captured-piece target, or "sq." - without risking an unbounded GAP
+// swallowing adjacent whitespace that isn't part of the square at all when
+// this pattern is reused for scanning surrounding text.
+const SQUARE_SHAPE = `(?:(?:${SIDE_LETTERS})${GAP})?(?:${FILE_LETTERS})(?:${GAP}(?:\\d|${SQ}))?${DOT}`;
 
 // Trailing DOT (not the exact-match check this used to be) because a
 // promotion piece reached via `slashTail` may come through SQUARE_SHAPE
@@ -94,21 +94,19 @@ function parsePromotionPiece(raw: string): PromotionPiece {
 
 // Anchored to the end of the string; tried leftmost-first, so e.g. "++" is
 // preferred over "+" and "checkmate" over "check" whenever both would fit.
-// "ep" (standing for "e.p.") is the one token split into two letters with
-// filler between them - see the FILLER comment above.
+// "ep" (standing for "e.p.") is the one token split into two letters with a
+// GAP between them - see the GAP comment above.
 const TRAILING_SUFFIX = new RegExp(
-  `${FILLER}(checkmate|check|mate|ch|e${FILLER}p|\\+\\+|\\+|!!|\\?\\?|!\\?|\\?!|!|\\?)${FILLER}$`,
+  `${GAP}(checkmate|check|mate|ch|e${GAP}p|\\+\\+|\\+|!!|\\?\\?|!\\?|\\?!|!|\\?)${GAP}$`,
 );
 
-const SQUARE = new RegExp(
-  `^(?:(${SIDE_LETTERS})${FILLER})?(${FILE_LETTERS})(?:${FILLER}(?:(\\d)|${SQ}))?${DOT}$`,
-);
+const SQUARE = new RegExp(`^(?:(${SIDE_LETTERS})${GAP})?(${FILE_LETTERS})(?:${GAP}(?:(\\d)|${SQ}))?${DOT}$`);
 
 // Exported so other tools can build their own RegExp from the exact same
 // definition (e.g. unanchored, or embedded in a larger pattern) instead of
 // re-deriving it and risking drift as this grammar evolves. Anchored below
 // for this module's own use; callers add whatever delimiters they need.
-// No leading/trailing filler here: that's padding *around* the move, not
+// No leading/trailing GAP here: that's padding *around* the move, not
 // *within* it, and would mean a match against surrounding text swallows
 // adjacent whitespace it doesn't own.
 // Distinct groups per semantic value (never one group spanning filler/parens
@@ -117,20 +115,20 @@ const SQUARE = new RegExp(
 // a group that captures a word *plus* the filler around it can no longer be
 // compared to the bare word.
 export const CASTLING_PATTERN =
-  `(?:(O${FILLER}-${FILLER}O)(${FILLER}-${FILLER}O)?|(Castles))${DOT}` +
-  `(?:${FILLER}(?:(K|Q)|\\(${FILLER}(King|Queen)${FILLER}\\))${DOT})?`;
+  `(?:(O${GAP}-${GAP}O)(${GAP}-${GAP}O)?|(Castles))${DOT}` +
+  `(?:${GAP}(?:(K|Q)|\\(${GAP}(King|Queen)${GAP}\\))${DOT})?`;
 
 // See GRAMMAR.md for what each group means; named groups mirror the EBNF
 // production names directly.
 export const PIECE_MOVE_PATTERN =
-  `(?:(?<fusedSide>${SIDE_LETTERS})(?:${FILLER}(?<fusedFile>${WING_FILE_LETTERS}))?${FILLER})?` + // FusedOrigin
+  `(?:(?<fusedSide>${SIDE_LETTERS})(?:${GAP}(?<fusedFile>${WING_FILE_LETTERS}))?${GAP})?` + // FusedOrigin
   '(?<piece>Kt|K|Q|R|B|N|P)' + // Piece
-  `(?:${FILLER}\\(${FILLER}(?<originSquare>${SQUARE_SHAPE})\\))?` + // "(" Square ")"
-  `${FILLER}(?<moveOp>${NON_CAPTURE_OPS}|${CAPTURE_OPS})${FILLER}` + // MoveOp
+  `(?:${GAP}\\(${GAP}(?<originSquare>${SQUARE_SHAPE})\\))?` + // "(" Square ")"
+  `${GAP}(?<moveOp>${NON_CAPTURE_OPS}|${CAPTURE_OPS})${GAP}` + // MoveOp
   `(?<target>${SQUARE_SHAPE}|P)` + // Target: a Square, or bare "P" ("P" isn't a file)
-  `(?:${FILLER}/${FILLER}(?<slashTail>${SQUARE_SHAPE}|${PROMOTION_PIECE_LETTERS}))?` + // "/" SlashTail
-  `(?:${FILLER}\\(${FILLER}(?<promoParen>${PROMOTION_PIECE_LETTERS})${FILLER}\\)|` +
-  `${FILLER}=${FILLER}(?<promoEq>${PROMOTION_PIECE_LETTERS})${DOT})?`; // Promotion
+  `(?:${GAP}/${GAP}(?<slashTail>${SQUARE_SHAPE}|${PROMOTION_PIECE_LETTERS}))?` + // "/" SlashTail
+  `(?:${GAP}\\(${GAP}(?<promoParen>${PROMOTION_PIECE_LETTERS})${GAP}\\)|` +
+  `${GAP}=${GAP}(?<promoEq>${PROMOTION_PIECE_LETTERS})${DOT})?`; // Promotion
 
 const CASTLING = new RegExp(`^${CASTLING_PATTERN}$`);
 const PIECE_MOVE = new RegExp(`^${PIECE_MOVE_PATTERN}$`);
